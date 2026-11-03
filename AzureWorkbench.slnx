@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AzureWorkbench/AzureWorkbench.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AzureWorkbench.Checks/AzureWorkbench.Checks.csproj" />
+  </Folder>
+</Solution>

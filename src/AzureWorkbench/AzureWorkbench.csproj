@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>Assets/App.ico</ApplicationIcon>
+    <Product>Azure Workbench</Product>
+    <Title>Azure Workbench</Title>
+    <Copyright>Copyright (c) 2026 johblr. MIT License.</Copyright>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <!-- Release publishes with a RuntimeIdentifier (-r <rid>) produce a self-contained single file.
+       Plain `dotnet build` / `dotnet run` are unaffected.
+       Trimming and Native AOT are deliberately NOT enabled: the Azure SDK and the reflection-based
+       System.Text.Json usage are not trim-safe. ReadyToRun + compression keep startup and size down. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' And '$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets/App.ico" />
+    <None Update="ThirdPartyNotices.txt" CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
+    <PackageReference Include="Azure.ResourceManager.Authorization" Version="1.1.7" />
+    <PackageReference Include="Azure.ResourceManager.ServiceBus" Version="1.2.0" />
+    <PackageReference Include="Dock.Avalonia" Version="11.3.12.1" />
+    <PackageReference Include="Dock.Avalonia.Themes.Fluent" Version="11.3.12.1" />
+    <PackageReference Include="Dock.Model.Avalonia" Version="11.3.12.1" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for the test build (no release is created)'
+        default: '0.0.0-dev'
+        required: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  checks:
+    name: Build and check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build
+        run: dotnet build AzureWorkbench.slnx -c Release
+      - name: Run checks
+        run: dotnet run --project tests/AzureWorkbench.Checks -c Release
+
+  package:
+    name: Package (${{ matrix.rid }})
+    needs: checks
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write      # lets the job request a short-lived Sigstore signing identity
+      attestations: write  # stores the provenance attestation on the repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows builds run on Windows so the exe icon is embedded.
+          - { os: windows-latest, rid: win-x64 }
+          - { os: windows-latest, rid: win-arm64 }
+          # Linux and macOS builds are produced on Linux (no macOS runner needed).
+          - { os: ubuntu-latest, rid: linux-x64 }
+          - { os: ubuntu-latest, rid: linux-arm64 }
+          - { os: ubuntu-latest, rid: osx-x64 }
+          - { os: ubuntu-latest, rid: osx-arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Work out version
+        id: ver
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v="${INPUT_VERSION:-0.0.0-dev}"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Package
+        shell: bash
+        run: python packaging/package.py --rid "${{ matrix.rid }}" --version "${{ steps.ver.outputs.version }}" --out artifacts/release
+
+      # Signed build provenance: proves each archive was built by this workflow from this commit.
+      # Verify with: gh attestation verify <file> --repo <owner>/<repo>
+      # Free for public repositories; private repositories need GitHub Enterprise Cloud, so never block a release on it.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        continue-on-error: true
+        with:
+          subject-path: artifacts/release/AzureWorkbench-*
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AzureWorkbench-${{ matrix.rid }}
+          path: artifacts/release/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: package
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Write checksums
+        working-directory: dist
+        run: |
+          sha256sum AzureWorkbench-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            dist/AzureWorkbench-*
+            dist/SHA256SUMS.txt
