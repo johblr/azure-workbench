@@ -1,0 +1,47 @@
+version: 2
+updates:
+  # NuGet packages for the app and the checks project. Groups span both folders, so e.g. Avalonia and
+  # Avalonia.Headless are updated together in one PR.
+  - package-ecosystem: nuget
+    directories:
+      - /src/AzureWorkbench
+      - /tests/AzureWorkbench.Checks
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Pacific/Auckland
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    commit-message:
+      prefix: deps
+    groups:
+      # Avalonia packages (including Avalonia.Headless in the checks) must stay on the same version.
+      avalonia:
+        patterns: ["Avalonia", "Avalonia.*"]
+      # Dock is built against a specific Avalonia line; keep its packages together.
+      dock:
+        patterns: ["Dock.*"]
+      azure-sdk:
+        patterns: ["Azure.*"]
+    ignore:
+      # Avalonia 12 and Dock 12 are breaking upgrades; take them deliberately, not via a weekly PR.
+      - dependency-name: "Avalonia*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Dock.*"
+        update-types: ["version-update:semver-major"]
+
+  # Versions of the GitHub Actions used by CI and the release workflow.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Pacific/Auckland
+    labels: [dependencies]
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]

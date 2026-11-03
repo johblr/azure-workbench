@@ -341,16 +341,28 @@ public class MainWindow : Window, IWorkbench
             PinnableLeaf(Ui.Label(Ui.Glyph(glyph, color), title), new AppPage(app, kind), tenantId);
         return new TreeViewItem
         {
-            Header = Ui.Label(Ui.Glyph(app.IsFunction ? "F" : "W", app.IsFunction ? G.FunctionApp : G.WebApp), app.Name, app.IsLinux ? "linux" : null),
-            Tag = new AppPage(app, AppPageKind.Logs),
+            Header = Ui.Label(Ui.Glyph(app.IsFunction ? "F" : "W", app.IsFunction ? G.FunctionApp : G.WebApp), app.Name, AppDetail(app)),
+            Tag = new AppPage(app, AppPageKind.Overview),
             Items =
             {
+                Page("O", G.Overview, "Overview", AppPageKind.Overview),
                 Page("L", G.Logs, "Logs", AppPageKind.Logs),
                 Page("C", G.Config, "Configuration", AppPageKind.Configuration),
                 Page("D", G.Deployments, "Deployments", AppPageKind.Deployments),
             },
         };
     }
+
+    /// <summary>Muted tree detail for an app: "linux", "stopped" or both.</summary>
+    static string? AppDetail(WebAppRef app)
+    {
+        var parts = new List<string>();
+        if (app.IsLinux) parts.Add("linux");
+        if (app.IsStopped) parts.Add("stopped");
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
+    }
+
+    void OpenOverview(WebAppRef app) => _status.Text = $"Overview for {app.Name} is not available in this build.";
 
     TreeViewItem NamespaceNode(NamespaceRef ns, string? tenantId)
     {
@@ -452,6 +464,7 @@ public class MainWindow : Window, IWorkbench
         "subscription" => Ui.Label(Ui.Glyph("SU", G.SubscriptionEntity), PinResolver.Describe(pin)),
         "config" => Ui.Label(Ui.Glyph("C", G.Config), PinResolver.Describe(pin)),
         "deployments" => Ui.Label(Ui.Glyph("D", G.Deployments), PinResolver.Describe(pin)),
+        "overview" => Ui.Label(Ui.Glyph("O", G.Overview), PinResolver.Describe(pin)),
         _ => Ui.Label(Ui.Glyph("L", G.Logs), PinResolver.Describe(pin)),
     };
 
@@ -536,6 +549,9 @@ public class MainWindow : Window, IWorkbench
             case AppPageKind.Deployments:
                 OpenDeployments(app);
                 break;
+            case AppPageKind.Overview:
+                OpenOverview(app);
+                break;
             default:
                 _workspace.Open("logs:" + app.Id, () =>
                 {
@@ -602,14 +618,14 @@ public class MainWindow : Window, IWorkbench
             : null;
         IEnumerable<QuickOpenItem> Pages(WebAppRef app, string? subscription)
         {
-            foreach (var kind in new[] { AppPageKind.Logs, AppPageKind.Configuration, AppPageKind.Deployments })
+            foreach (var kind in new[] { AppPageKind.Overview, AppPageKind.Logs, AppPageKind.Configuration, AppPageKind.Deployments })
             {
                 if (!seen.Add(kind + app.Id)) continue;
                 var page = new AppPage(app, kind);
                 yield return new QuickOpenItem($"{app.Name} · {kind.ToString().ToLowerInvariant()}",
                     (app.IsFunction ? "function app" : "app service") + (subscription != null ? " · " + subscription : ""),
-                    Ui.Glyph(kind switch { AppPageKind.Configuration => "C", AppPageKind.Deployments => "D", _ => "L" },
-                        kind switch { AppPageKind.Configuration => G.Config, AppPageKind.Deployments => G.Deployments, _ => G.Logs }),
+                    Ui.Glyph(kind switch { AppPageKind.Configuration => "C", AppPageKind.Deployments => "D", AppPageKind.Overview => "O", _ => "L" },
+                        kind switch { AppPageKind.Configuration => G.Config, AppPageKind.Deployments => G.Deployments, AppPageKind.Overview => G.Overview, _ => G.Logs }),
                     () => OpenPage(page));
             }
         }

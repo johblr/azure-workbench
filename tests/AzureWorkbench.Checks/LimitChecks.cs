@@ -46,8 +46,8 @@ static class LimitChecks
         PumpJobs();
         var results = Field<ListBox>(shell, "_results");
         var items = (List<QuickOpenItem>)typeof(MainWindow).GetField("_resultItems", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(shell)!;
-        Check(results.IsVisible && items.Count == 3 && items.All(i => i.Title.StartsWith("orders-fn"))
-            && items.Any(i => i.Title.EndsWith("deployments")), "explorer search finds indexed apps that are not loaded in the tree");
+        Check(results.IsVisible && items.Count == 4 && items.All(i => i.Title.StartsWith("orders-fn"))
+            && items.Any(i => i.Title.EndsWith("deployments")) && items.Any(i => i.Title.EndsWith("overview")), "explorer search finds indexed apps that are not loaded in the tree");
         Field<TextBox>(shell, "_filter").Text = "";
         PumpJobs();
         Check(!results.IsVisible, "clearing the search hides the results");

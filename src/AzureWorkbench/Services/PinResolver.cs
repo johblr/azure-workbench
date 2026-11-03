@@ -16,6 +16,7 @@ public sealed class PinResolver(CredentialProvider credentials, HttpClient http)
 
     public static Pin For(AppPage page, string? tenantId) => new(page.Kind switch
     {
+        AppPageKind.Overview => "overview",
         AppPageKind.Configuration => "config",
         AppPageKind.Deployments => "deployments",
         _ => "logs",
@@ -27,6 +28,7 @@ public sealed class PinResolver(CredentialProvider credentials, HttpClient http)
         "logs" => $"{pin.Name} · logs",
         "config" => $"{pin.Name} · configuration",
         "deployments" => $"{pin.Name} · deployments",
+        "overview" => $"{pin.Name} · overview",
         _ => pin.Name,
     };
 
@@ -43,13 +45,19 @@ public sealed class PinResolver(CredentialProvider credentials, HttpClient http)
                 var nsRef = new NamespaceRef(credential, ns);
                 return new QueueRef(nsRef, pin.Name, pin.Kind == "subscription" ? pin.Detail : null, pin.Kind == "topic");
             }
-            case "logs" or "config" or "deployments":
+            case "logs" or "config" or "deployments" or "overview":
             {
                 using var site = await _rest.ArmAsync(HttpMethod.Get, pin.Id, "2023-12-01", credential, null,
                     "The pinned app may have been deleted or you may no longer have access.", ct);
                 var root = site.RootElement;
-                var app = new WebAppRef(Json.Required(root, "id"), Json.Required(root, "name"), Json.Text(root, "kind"), credential, InsightsLink(root));
-                var kind = pin.Kind switch { "config" => AppPageKind.Configuration, "deployments" => AppPageKind.Deployments, _ => AppPageKind.Logs };
+                var state = root.TryGetProperty("properties", out var props) ? Json.Text(props, "state") : "";
+                var app = new WebAppRef(Json.Required(root, "id"), Json.Required(root, "name"), Json.Text(root, "kind"), credential, InsightsLink(root),
+                    state.Length > 0 ? state : null);
+                var kind = pin.Kind switch
+                {
+                    "config" => AppPageKind.Configuration, "deployments" => AppPageKind.Deployments,
+                    "overview" => AppPageKind.Overview, _ => AppPageKind.Logs,
+                };
                 return new AppPage(app, kind);
             }
             default:

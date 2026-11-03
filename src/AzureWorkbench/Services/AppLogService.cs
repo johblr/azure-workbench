@@ -20,7 +20,8 @@ public sealed class AppLogService(HttpClient http)
             $"https://{ArmHost}/subscriptions/{subscriptionId}/providers/Microsoft.Web/sites?api-version=2023-12-01",
             credential, ct);
         return resources.Where(r => !Text(r, "kind").Contains("workflowapp", StringComparison.OrdinalIgnoreCase))
-            .Select(r => new WebAppRef(Required(r, "id"), Required(r, "name"), Text(r, "kind"), credential, InsightsLink(r)))
+            .Select(r => new WebAppRef(Required(r, "id"), Required(r, "name"), Text(r, "kind"), credential, InsightsLink(r),
+                r.TryGetProperty("properties", out var p) ? Text(p, "state") is { Length: > 0 } state ? state : null : null))
             .OrderBy(a => a.Name).ToList();
     }
 

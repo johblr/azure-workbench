@@ -2,14 +2,16 @@ using Azure.Core;
 
 namespace AzureWorkbench.Models;
 
-public record WebAppRef(string Id, string Name, string Kind, TokenCredential Credential, string? InsightsResourceId)
+/// <param name="State">ARM site state when known ("Running", "Stopped"); null when not loaded.</param>
+public record WebAppRef(string Id, string Name, string Kind, TokenCredential Credential, string? InsightsResourceId, string? State = null)
 {
     public string SubscriptionId => Id.Split('/')[2];
+    public bool IsStopped => string.Equals(State, "Stopped", StringComparison.OrdinalIgnoreCase);
     public bool IsLinux => Kind.Split(',').Contains("linux", StringComparer.OrdinalIgnoreCase);
     public bool IsFunction => Kind.Split(',').Contains("functionapp", StringComparer.OrdinalIgnoreCase);
 }
 
-public enum AppPageKind { Logs, Configuration, Deployments }
+public enum AppPageKind { Overview, Logs, Configuration, Deployments }
 
 /// <summary>Explorer tree target: one of an app's tabs.</summary>
 public record AppPage(WebAppRef App, AppPageKind Kind);
