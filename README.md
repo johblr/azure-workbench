@@ -241,6 +241,23 @@ Expand an app under **App Services** or **Function Apps** and select **Configura
 
 Reading values requires `Microsoft.Web/sites/config/list/action` and saving requires write access on the app (for example Website Contributor or Contributor). Reader is not enough. Key Vault references (`@Microsoft.KeyVault(...)`) are shown and saved as their reference text.
 
+## App overview, health and restart
+
+Selecting an app, or its **Overview** page, opens a summary of the App Service or Function App:
+
+- **Status cards:** state (Running/Stopped), Azure **Resource Health** (Available/Degraded/Unavailable, with Azure's explanation), plan and instance count, runtime (e.g. `.NET 8.0 (isolated)`, `Node 20 LTS`), last deployment and number of instances. State and health refresh every minute while the tab is visible.
+- **METRICS (24H):** totals or averages with an hourly sparkline. Web apps show requests, server errors (5xx, red when above zero), client errors (4xx), response time, CPU time, memory and health-check status. Function apps show executions, requests, server errors and memory.
+- **DETAILS:** host names, location, HTTPS only, ARR affinity, Always On, FTPS, minimum TLS, HTTP/2, health-check path, workers, 32-bit, last modified, outbound IPs and deployment slots. Function apps also get a **FUNCTIONS** tab listing each function's trigger and whether it's enabled.
+- **Actions:**
+  - **Restart...** restarts every instance after confirmation; in-flight requests are dropped.
+  - **Stop...** requires typing the app name.
+  - **Start** is available only while the app is stopped.
+  - **Open in portal**, **Open site** and **Copy URL**.
+
+  After a start or stop the state refreshes on its own a few seconds later.
+
+Each section loads independently, so missing access to one (for example metrics) shows a note in that section instead of failing the tab. Viewing needs Reader on the app (Monitoring Reader for metrics). Restart, stop and start need Website Contributor or Contributor. Apps that Azure reports as stopped are marked **stopped** in the explorer.
+
 ## Deployment history
 
 Select an app's **Deployments** page to list its recorded deployments, newest first: status, start time, duration, author, deployer (e.g. GitHub Actions, ZipDeploy) and message, with the **ACTIVE** deployment marked. Select one to see its full details and deployment log, including the detailed build/deploy output (e.g. Oryx) that Kudu keeps under individual steps (up to 20 per deployment, fetched only from the app's public `*.scm.azurewebsites.net` endpoint). **Copy details** copies everything shown. The page is read-only (no redeploy). It needs Reader access; Flex Consumption and some container deployments record little or no history here.

@@ -28,6 +28,7 @@ public class MainWindow : Window, IWorkbench
     readonly AppConfigService _appConfig;
     readonly PinResolver _pins;
     readonly ResourceIndex _index;
+    readonly AppOverviewService _overview;
     readonly ListBox _results = new() { IsVisible = false, MaxHeight = 320, Background = Brushes.Transparent, Margin = new Thickness(0, 0, 0, 6) };
     readonly TextBlock _resultsHeader = new() { IsVisible = false };
     readonly TextBlock _indexInfo = new() { Foreground = Brushes.White, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0) };
@@ -67,6 +68,7 @@ public class MainWindow : Window, IWorkbench
         _appConfig = new AppConfigService(_http);
         _pins = new PinResolver(_credentials, _http);
         _deployments = new DeploymentService(_http);
+        _overview = new AppOverviewService(_http);
         _index = new ResourceIndex(_explorer, _appLogs, _credentials);
         _index.Changed += OnIndexChanged;
         _results.SelectionChanged += (_, _) =>
@@ -372,7 +374,13 @@ public class MainWindow : Window, IWorkbench
         return parts.Count == 0 ? null : string.Join(" · ", parts);
     }
 
-    void OpenOverview(WebAppRef app) => _status.Text = $"Overview for {app.Name} is not available in this build.";
+    void OpenOverview(WebAppRef app) =>
+        _workspace.Open("overview:" + app.Id, () =>
+        {
+            var view = new AppOverviewView(app, _overview, _deployments, this);
+            _ = view.LoadAsync();
+            return new WorkspaceDocument("overview:" + app.Id, $"{app.Name} · overview", app.Id, view, view.CloseAsync);
+        });
 
     TreeViewItem NamespaceNode(NamespaceRef ns, string? tenantId)
     {

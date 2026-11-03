@@ -201,7 +201,7 @@ public sealed class AppOverviewService(HttpClient http)
         var linux = Json.Text(p, "linuxFxVersion");
         var net = Json.Text(p, "netFrameworkVersion");
         string runtime;
-        if (linux.Length > 0) runtime = linux;
+        if (linux.Length > 0) runtime = FriendlyRuntime(linux);
         else
         {
             runtime = net;
@@ -212,6 +212,26 @@ public sealed class AppOverviewService(HttpClient http)
         }
         return new SiteConfigInfo(linux, net, runtime, Bool(p, "alwaysOn"), Json.Text(p, "ftpsState"), Json.Text(p, "minTlsVersion"),
             Bool(p, "http20Enabled"), Json.Text(p, "healthCheckPath"), Int(p, "numberOfWorkers"), Bool(p, "use32BitWorkerProcess"));
+    }
+
+    /// <summary>Turns a Linux runtime stack such as "DOTNET-ISOLATED|8.0" or "NODE|20-lts" into ".NET 8.0 (isolated)" or "Node 20 LTS".</summary>
+    public static string FriendlyRuntime(string linuxFxVersion)
+    {
+        var parts = linuxFxVersion.Split('|', 2);
+        if (parts.Length < 2) return linuxFxVersion;
+        var version = parts[1].Replace("-lts", " LTS", StringComparison.OrdinalIgnoreCase);
+        return parts[0].ToUpperInvariant() switch
+        {
+            "DOTNETCORE" or "DOTNET" => $".NET {version}",
+            "DOTNET-ISOLATED" => $".NET {version} (isolated)",
+            "NODE" => $"Node {version}",
+            "PYTHON" => $"Python {version}",
+            "JAVA" => $"Java {version}",
+            "PHP" => $"PHP {version}",
+            "POWERSHELL" => $"PowerShell {version}",
+            "DOCKER" or "COMPOSE" => $"Container ({version})",
+            _ => linuxFxVersion,
+        };
     }
 
     public static PlanInfo ParsePlan(JsonElement root)

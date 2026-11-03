@@ -93,6 +93,11 @@ static class OverviewChecks
 
     public static void Run()
     {
+        Check(AppOverviewService.FriendlyRuntime("DOTNETCORE|8.0") == ".NET 8.0"
+            && AppOverviewService.FriendlyRuntime("DOTNET-ISOLATED|8.0") == ".NET 8.0 (isolated)"
+            && AppOverviewService.FriendlyRuntime("NODE|20-lts") == "Node 20 LTS"
+            && AppOverviewService.FriendlyRuntime("DOCKER|myregistry.azurecr.io/orders:1.2") == "Container (myregistry.azurecr.io/orders:1.2)"
+            && AppOverviewService.FriendlyRuntime("custom") == "custom", "Linux runtime stacks are shown in readable form");
         Service();
         View();
         SparklineChecks();
@@ -110,7 +115,7 @@ static class OverviewChecks
             && site.HttpsOnly == true && site.ClientAffinityEnabled == false && site.Location == "West Europe" && site.Kind == "functionapp,linux"
             && site.OutboundIpAddresses.SequenceEqual(["1.1.1.1", "2.2.2.2"]) && site.LastModifiedUtc != null, "site fields are parsed");
         var cfg = o.Config.Value!;
-        Check(cfg.Runtime == "DOTNET-ISOLATED|8.0" && cfg.AlwaysOn == true && cfg.FtpsState == "FtpsOnly" && cfg.MinTlsVersion == "1.2"
+        Check(cfg.Runtime == ".NET 8.0 (isolated)" && cfg.LinuxFxVersion == "DOTNET-ISOLATED|8.0" && cfg.AlwaysOn == true && cfg.FtpsState == "FtpsOnly" && cfg.MinTlsVersion == "1.2"
             && cfg.Http20Enabled == true && cfg.HealthCheckPath == "/health" && cfg.NumberOfWorkers == 2 && cfg.Use32BitWorkerProcess == false,
             "config fields and Linux runtime are parsed");
         var plan = o.Plan.Value!;
@@ -230,7 +235,7 @@ static class OverviewChecks
         Pump(view.LoadAsync());
         Check(CardText(view, "_state") == "Running", "State card shows Running");
         Check(CardText(view, "_health") == "Available", "Health card shows Available");
-        Check(CardText(view, "_plan").StartsWith("P1v3") && CardText(view, "_runtime") == "DOTNET-ISOLATED|8.0" && CardText(view, "_instances") == "2"
+        Check(CardText(view, "_plan").StartsWith("P1v3") && CardText(view, "_runtime") == ".NET 8.0 (isolated)" && CardText(view, "_instances") == "2"
             && CardText(view, "_lastDeployment") == "Success", "plan, runtime, instances and last deployment cards load");
         Check(Field<TextBlock>(view, "_status").Text!.StartsWith("Loaded at "), "status line reports the load time");
         Check(!Field<Button>(view, "_start").IsEnabled, "Start is disabled while the app is running");
