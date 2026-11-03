@@ -8,6 +8,8 @@ public enum AuthMode { AzureCli, InteractiveBrowser }
 public class CredentialProvider(string? stateDirectory = null, Func<bool>? allowUnencryptedCache = null)
 {
     readonly Dictionary<string, TokenCredential> _cache = new();
+    // Each Azure CLI token request starts an `az` process; a few at a time keeps a multi-tenant index from timing out.
+    static readonly SemaphoreSlim CliGate = new(3);
 
     public AuthMode Mode { get; private set; }
 
@@ -25,7 +27,9 @@ public class CredentialProvider(string? stateDirectory = null, Func<bool>? allow
         var key = tenantId ?? "";
         if (_cache.TryGetValue(key, out var cred)) return cred;
         cred = Mode == AuthMode.AzureCli
-            ? new AzureCliCredential(new AzureCliCredentialOptions { TenantId = tenantId })
+            ? new CachingCredential(
+                new AzureCliCredential(new AzureCliCredentialOptions { TenantId = tenantId, ProcessTimeout = TimeSpan.FromSeconds(60) }),
+                CliGate, tenantId)
             : stateDirectory == null
                 ? new InteractiveBrowserCredential(new InteractiveBrowserCredentialOptions { TenantId = tenantId })
                 : new RememberedBrowserCredential(tenantId, stateDirectory, allowUnencryptedCache ?? (() => false), message => Notice?.Invoke(message));

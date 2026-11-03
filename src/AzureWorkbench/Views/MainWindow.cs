@@ -299,6 +299,16 @@ public class MainWindow : Window, IWorkbench
                     return (await _explorer.GetSubscriptionsAsync(tenantId)).Select(sub => SubscriptionNode(sub, tenantId, ct));
                 });
             _tenantOf[node] = tenantId ?? "";
+            if (mode == AuthMode.AzureCli && tenantId != null)
+            {
+                var login = new MenuItem { Header = "Copy 'az login' command for this tenant" };
+                login.Click += async (_, _) =>
+                {
+                    await Ui.CopyAsync(this, $"az login --tenant {tenantId}");
+                    _status.Text = $"Copied: az login --tenant {tenantId}. Run it in a terminal, then right-click the tenant and choose Refresh.";
+                };
+                node.ContextMenu?.Items.Add(login);
+            }
             _tree.Items.Add(node);
         }
         _signedIn = true;
@@ -838,26 +848,26 @@ public class MainWindow : Window, IWorkbench
     async void OnClosing(object? sender, WindowClosingEventArgs e)
     {
         if (_allowClose) return;
+        // Closing is asynchronous (tabs stop streams, connections close), so cancel this attempt and close ourselves
+        // when ready. On macOS this cancel also aborts Cmd+Q / Quit, so QuitApplication() below finishes the quit.
         e.Cancel = true;
         if (_closing) return;
-        if (_busy || _workspace.HasBusyDocuments)
-        {
-            _status.Text = "Wait for active operations to finish before closing the window.";
-            return;
-        }
         _closing = true;
         try
         {
-            if (_workspace.HasUnsavedWork && !await ConfirmDiscardAsync()) return;
+            var busy = _busy || _workspace.HasBusyDocuments;
+            if ((busy || _workspace.HasUnsavedWork) && !await ConfirmQuitAsync(busy)) return;
             _body.IsEnabled = _signIn.IsEnabled = false;
-            if (!await _workspace.CloseAllAsync(true)) return;
+            _status.Text = "Closing…";
             _autoRefresh.Stop();
             _session.Cancel();
-            await _queues.DisposeAsync();
+            // Never let a slow or stuck tab or connection keep the app open.
+            await Bounded(_workspace.CloseAllAsync(true), TimeSpan.FromSeconds(5));
+            await Bounded(_queues.DisposeAsync().AsTask(), TimeSpan.FromSeconds(5));
             _http.Dispose();
-            _session.Dispose();
             _allowClose = true;
             Close();
+            QuitApplication();
         }
         catch (Exception ex) { _status.Text = $"Could not close cleanly: {ex.Message}"; }
         finally
@@ -867,22 +877,45 @@ public class MainWindow : Window, IWorkbench
         }
     }
 
-    async Task<bool> ConfirmDiscardAsync()
+    static async Task Bounded(Task task, TimeSpan limit)
+    {
+        try { await task.WaitAsync(limit); }
+        catch (Exception) { /* timed out or failed during shutdown: quitting anyway */ }
+    }
+
+    static void QuitApplication()
+    {
+        if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+            desktop.Shutdown();
+    }
+
+    Task<bool> ConfirmQuitAsync(bool busy) => ConfirmAsync(
+        busy ? "Quit while operations are running?" : "Discard unsaved work?",
+        (busy
+            ? "Some tabs are still working (for example sending, moving or purging messages, or saving configuration). " +
+              "Quitting cancels them: a message being moved may end up in both places or stay in the dead-letter queue, and a configuration save may be incomplete."
+            : "") +
+        (_workspace.HasUnsavedWork
+            ? (busy ? "\n\n" : "") + "Some tabs hold unsaved configuration edits or received-and-deleted messages, which will be discarded."
+            : ""),
+        busy ? "Quit anyway" : "Discard and quit");
+
+    async Task<bool> ConfirmAsync(string title, string message, string action)
     {
         var dialog = new Window
         {
-            Title = "Discard unsaved work?", Width = 430, SizeToContent = SizeToContent.Height, CanResize = false,
+            Title = title, Width = 460, SizeToContent = SizeToContent.Height, CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, Background = VsCode.SideBar,
         };
-        var discard = Ui.Button("Discard and close", () => dialog.Close(true));
-        discard.Classes.Add("danger");
+        var confirm = Ui.Button(action, () => dialog.Close(true));
+        confirm.Classes.Add("danger");
         dialog.Content = new StackPanel
         {
             Margin = new Thickness(16), Spacing = 16,
             Children =
             {
-                new TextBlock { Text = "Some tabs hold unsaved configuration edits or received-and-deleted messages. Closing will discard them. Save or resend them first if needed.", TextWrapping = TextWrapping.Wrap },
-                Ui.Row(Ui.Primary("Keep working", () => dialog.Close(false)), discard),
+                new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+                Ui.Row(Ui.Primary("Keep working", () => dialog.Close(false)), confirm),
             },
         };
         return await dialog.ShowDialog<bool>(this);

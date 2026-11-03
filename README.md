@@ -167,6 +167,10 @@ These are exact-file ASR exclusions, not antivirus exclusions. Only add the exce
 - Right-click any loaded folder and choose **Refresh** to reload it.
 - Settings (pins and the last sign-in method) are stored in `%APPDATA%\AzureWorkbench` on Windows and `~/.config/AzureWorkbench` on Linux and macOS (override with `AZUREWORKBENCH_HOME`). They contain resource IDs, never secrets.
 
+### Several tenants with Azure CLI
+
+`az login` signs you in to your home tenant. Other tenants often need their own sign-in, especially when they require MFA. When a tenant can't be opened, the explorer shows `Run: az login --tenant <id>` under it; right-click the tenant and choose **Copy 'az login' command for this tenant**. Run that command in a terminal, then right-click the tenant and choose **Refresh**. CLI tokens are cached per tenant and requested a few at a time, so indexing many tenants doesn't flood your machine with `az` processes.
+
 ### Staying signed in
 
 The app signs in automatically at start-up with the method you last used, when that needs no prompt: Azure CLI, or a browser account it remembers. Browser tokens are kept in the OS credential store (Windows DPAPI, macOS Keychain, Linux libsecret), and a non-secret account record lets later runs sign in silently. Where no keyring is available (for example WSL or a minimal Linux desktop), browser sign-in falls back to memory for that run and the status bar says so. Install a keyring such as gnome-keyring, or run the opt-in command **Remember browser sign-in without a keyring (unencrypted)**, which stores tokens in an unencrypted file in your profile folder (protected only by file permissions). Run it again to turn it off. Use the **Forget remembered browser sign-ins** command to choose a different account.
