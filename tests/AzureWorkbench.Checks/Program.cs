@@ -172,6 +172,7 @@ DeploymentChecks.Run();
 ConfigCompareChecks.Run();
 ServiceBusChecks.Run();
 LimitChecks.Run();
+OverviewChecks.Run();
 
 sealed class TestHandler : HttpMessageHandler
 {

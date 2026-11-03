@@ -10,6 +10,10 @@ on:
         default: '0.0.0-dev'
         required: true
 
+# Read-only by default; jobs that publish request more explicitly.
+permissions:
+  contents: read
+
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
