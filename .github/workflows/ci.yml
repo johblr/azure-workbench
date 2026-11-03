@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+# Read-only by default; jobs that publish request more explicitly.
+permissions:
+  contents: read
+
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true

@@ -46,8 +46,8 @@ static class LimitChecks
         PumpJobs();
         var results = Field<ListBox>(shell, "_results");
         var items = (List<QuickOpenItem>)typeof(MainWindow).GetField("_resultItems", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(shell)!;
-        Check(results.IsVisible && items.Count == 3 && items.All(i => i.Title.StartsWith("orders-fn"))
-            && items.Any(i => i.Title.EndsWith("deployments")), "explorer search finds indexed apps that are not loaded in the tree");
+        Check(results.IsVisible && items.Count == 4 && items.All(i => i.Title.StartsWith("orders-fn"))
+            && items.Any(i => i.Title.EndsWith("deployments")) && items.Any(i => i.Title.EndsWith("overview")), "explorer search finds indexed apps that are not loaded in the tree");
         Field<TextBox>(shell, "_filter").Text = "";
         PumpJobs();
         Check(!results.IsVisible, "clearing the search hides the results");
@@ -79,7 +79,64 @@ static class LimitChecks
         Check(!purge.IsEnabled, "the name must match exactly, including case");
         typed.Text = "orders";
         Check(purge.IsEnabled && purge.Classes.Contains("danger"), "typing the exact name enables the red purge button");
+        // Azure CLI tokens: cached, shared between concurrent callers, refreshed near expiry, friendly errors.
+        var cli = new CountingCredential();
+        var cached = new CachingCredential(cli, new SemaphoreSlim(1), "tenant-b");
+        var armScope = new Azure.Core.TokenRequestContext(["https://management.azure.com/.default"]);
+        var parallel = Enumerable.Range(0, 20).Select(_ => cached.GetTokenAsync(armScope, default).AsTask()).ToArray();
+        cli.Release.SetResult();
+        Pump(Task.WhenAll(parallel));
+        Check(cli.Calls == 1 && parallel.All(t => t.Result.Token == "token-1"), "20 concurrent requests share one az token fetch");
+        Pump(cached.GetTokenAsync(armScope, default).AsTask());
+        Check(cli.Calls == 1, "a valid cached token is reused");
+        Pump(cached.GetTokenAsync(new Azure.Core.TokenRequestContext(["https://api.applicationinsights.io/.default"]), default).AsTask());
+        Check(cli.Calls == 2, "each scope gets its own token");
+        cli.Lifetime = TimeSpan.FromMinutes(2);
+        var shortLived = new CachingCredential(cli, null, "tenant-b");
+        Pump(shortLived.GetTokenAsync(armScope, default).AsTask());
+        Pump(shortLived.GetTokenAsync(armScope, default).AsTask());
+        Check(cli.Calls == 4, "tokens close to expiry are refreshed");
+        cli.Fail = true;
+        var failing = new CachingCredential(cli, null, "tenant-c");
+        var error = Pump(Task.Run(async () =>
+        {
+            try { await failing.GetTokenAsync(armScope, default); return null; }
+            catch (Azure.Identity.AuthenticationFailedException ex) { return ex; }
+        }));
+        Check(error != null && error.Message.Contains("az login --tenant tenant-c"), "a tenant without a CLI sign-in says which az login to run");
+        cli.Fail = false;
+        Pump(failing.GetTokenAsync(armScope, default).AsTask());
+        Check(cli.Calls >= 6, "a failed fetch is retried next time rather than cached");
+
+        // Closing never hangs on a tab whose cleanup doesn't finish.
+        Environment.SetEnvironmentVariable("AZUREWORKBENCH_HOME", Path.Combine(Path.GetTempPath(), "awb-quit-" + Guid.NewGuid().ToString("N")));
+        var quitting = new MainWindow();
+        quitting.Show();
+        Field<WorkspaceTabs>(quitting, "_workspace").Open("stuck", () =>
+            new WorkspaceDocument("stuck", "Stuck", "", new TextBox(), () => new TaskCompletionSource().Task));
+        PumpJobs();
+        var timer = Stopwatch.StartNew();
+        quitting.Close();
+        Until(() => !quitting.IsVisible);
+        Check(timer.Elapsed < TimeSpan.FromSeconds(9), "the window closes even when a tab's cleanup never completes");
+        Environment.SetEnvironmentVariable("AZUREWORKBENCH_HOME", null);
         Console.WriteLine("Limit checks passed.");
+    }
+
+    sealed class CountingCredential : TokenCredential
+    {
+        public int Calls;
+        public bool Fail;
+        public TimeSpan Lifetime = TimeSpan.FromHours(1);
+        public TaskCompletionSource Release { get; } = new();
+        public override AccessToken GetToken(TokenRequestContext requestContext, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public override async ValueTask<AccessToken> GetTokenAsync(TokenRequestContext requestContext, CancellationToken cancellationToken)
+        {
+            var call = Interlocked.Increment(ref Calls);
+            await Release.Task;
+            if (Fail) throw new Azure.Identity.CredentialUnavailableException("ERROR: AADSTS50076 ... run az login");
+            return new AccessToken($"token-{call}", DateTimeOffset.UtcNow + Lifetime);
+        }
     }
 
     sealed class Handler : HttpMessageHandler
@@ -119,7 +176,7 @@ static class LimitChecks
         while (!done())
         {
             PumpJobs();
-            if (timer.Elapsed > TimeSpan.FromSeconds(10)) throw new TimeoutException("Limit check timed out");
+            if (timer.Elapsed > TimeSpan.FromSeconds(15)) throw new TimeoutException("Limit check timed out");
             Thread.Sleep(5);
         }
     }

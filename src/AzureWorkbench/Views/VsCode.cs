@@ -28,7 +28,7 @@ static class VsCode
     {
         public const string Tenant = "#c5c5c5", Subscription = "#e8ab53", ServiceBus = "#3794ff", Queue = "#4ec9b0",
             Topic = "#c586c0", SubscriptionEntity = "#b5cea8", WebApp = "#4fc1ff", FunctionApp = "#dcdcaa",
-            Logs = "#9cdcfe", Config = "#d7ba7d", Deployments = "#89d185", Pinned = "#f14c4c";
+            Logs = "#9cdcfe", Overview = "#75beff", Config = "#d7ba7d", Deployments = "#89d185", Pinned = "#f14c4c";
     }
 
     public static readonly FontFamily Mono = new("Cascadia Code,Consolas,SF Mono,Menlo,Monaco,Ubuntu Mono,DejaVu Sans Mono,Liberation Mono,monospace");

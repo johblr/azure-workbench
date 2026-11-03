@@ -167,6 +167,10 @@ These are exact-file ASR exclusions, not antivirus exclusions. Only add the exce
 - Right-click any loaded folder and choose **Refresh** to reload it.
 - Settings (pins and the last sign-in method) are stored in `%APPDATA%\AzureWorkbench` on Windows and `~/.config/AzureWorkbench` on Linux and macOS (override with `AZUREWORKBENCH_HOME`). They contain resource IDs, never secrets.
 
+### Several tenants with Azure CLI
+
+`az login` signs you in to your home tenant. Other tenants often need their own sign-in, especially when they require MFA. When a tenant can't be opened, the explorer shows `Run: az login --tenant <id>` under it; right-click the tenant and choose **Copy 'az login' command for this tenant**. Run that command in a terminal, then right-click the tenant and choose **Refresh**. CLI tokens are cached per tenant and requested a few at a time, so indexing many tenants doesn't flood your machine with `az` processes.
+
 ### Staying signed in
 
 The app signs in automatically at start-up with the method you last used, when that needs no prompt: Azure CLI, or a browser account it remembers. Browser tokens are kept in the OS credential store (Windows DPAPI, macOS Keychain, Linux libsecret), and a non-secret account record lets later runs sign in silently. Where no keyring is available (for example WSL or a minimal Linux desktop), browser sign-in falls back to memory for that run and the status bar says so. Install a keyring such as gnome-keyring, or run the opt-in command **Remember browser sign-in without a keyring (unencrypted)**, which stores tokens in an unencrypted file in your profile folder (protected only by file permissions). Run it again to turn it off. Use the **Forget remembered browser sign-ins** command to choose a different account.
@@ -236,6 +240,23 @@ Expand an app under **App Services** or **Function Apps** and select **Configura
 - **Discard changes** restores the last loaded values. Nothing is stored locally.
 
 Reading values requires `Microsoft.Web/sites/config/list/action` and saving requires write access on the app (for example Website Contributor or Contributor). Reader is not enough. Key Vault references (`@Microsoft.KeyVault(...)`) are shown and saved as their reference text.
+
+## App overview, health and restart
+
+Selecting an app, or its **Overview** page, opens a summary of the App Service or Function App:
+
+- **Status cards:** state (Running/Stopped), Azure **Resource Health** (Available/Degraded/Unavailable, with Azure's explanation), plan and instance count, runtime (e.g. `.NET 8.0 (isolated)`, `Node 20 LTS`), last deployment and number of instances. State and health refresh every minute while the tab is visible.
+- **METRICS (24H):** totals or averages with an hourly sparkline. Web apps show requests, server errors (5xx, red when above zero), client errors (4xx), response time, CPU time, memory and health-check status. Function apps show executions, requests, server errors and memory.
+- **DETAILS:** host names, location, HTTPS only, ARR affinity, Always On, FTPS, minimum TLS, HTTP/2, health-check path, workers, 32-bit, last modified, outbound IPs and deployment slots. Function apps also get a **FUNCTIONS** tab listing each function's trigger and whether it's enabled.
+- **Actions:**
+  - **Restart...** restarts every instance after confirmation; in-flight requests are dropped.
+  - **Stop...** requires typing the app name.
+  - **Start** is available only while the app is stopped.
+  - **Open in portal**, **Open site** and **Copy URL**.
+
+  After a start or stop the state refreshes on its own a few seconds later.
+
+Each section loads independently, so missing access to one (for example metrics) shows a note in that section instead of failing the tab. Viewing needs Reader on the app (Monitoring Reader for metrics). Restart, stop and start need Website Contributor or Contributor. Apps that Azure reports as stopped are marked **stopped** in the explorer.
 
 ## Deployment history
 

@@ -26,7 +26,12 @@ public static class LazyTreeNode
             {
                 loaded = false; // collapse + expand to retry
                 node.Items.Clear();
-                node.Items.Add(new TreeViewItem { Header = "⚠ " + ex.Message.Split('\n')[0] });
+                var error = new TreeViewItem { Header = "⚠ " + ex.Message.Split('\n')[0].Trim() };
+                ToolTip.SetTip(error, ex.Message); // full detail on hover
+                var copy = new MenuItem { Header = "Copy error" };
+                copy.Click += async (_, _) => await Ui.CopyAsync(error, ex.Message);
+                error.ContextMenu = new ContextMenu { Items = { copy } };
+                node.Items.Add(error);
             }
             finally { loading = false; }
         }
