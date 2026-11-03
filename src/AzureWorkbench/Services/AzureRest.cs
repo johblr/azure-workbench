@@ -40,6 +40,24 @@ public sealed class AzureRest(HttpClient http)
         return await ReadJsonAsync(response, ct);
     }
 
+    /// <summary>
+    /// Calls an ARM path (starting with '/') with an explicit, already-escaped query string (without '?'). Returns null when the
+    /// response has no body (e.g. 202 Accepted from an action).
+    /// </summary>
+    public async Task<JsonDocument?> ArmQueryAsync(HttpMethod method, string path, string query, TokenCredential credential,
+        string hint, CancellationToken ct)
+    {
+        if (!path.StartsWith('/') || path.Contains('?') || path.Contains('#'))
+            throw new ArgumentException("ARM paths must be absolute resource paths without a query.", nameof(path));
+        if (query.StartsWith('?') || query.Contains('#') || query.Contains(' '))
+            throw new ArgumentException("The query must be escaped and must not start with '?'.", nameof(query));
+        using var request = new HttpRequestMessage(method, $"https://{ArmHost}{path}?{query}");
+        using var response = await SendAsync(request, credential, ArmScope, hint, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent || response.Content.Headers.ContentLength == 0) return null;
+        var text = await response.Content.ReadAsStringAsync(ct);
+        return string.IsNullOrWhiteSpace(text) ? null : JsonDocument.Parse(text);
+    }
+
     /// <summary>Lists an ARM collection, following nextLink only to the ARM host.</summary>
     public async Task<List<JsonElement>> ListAsync(string url, TokenCredential credential, string hint, CancellationToken ct)
     {
