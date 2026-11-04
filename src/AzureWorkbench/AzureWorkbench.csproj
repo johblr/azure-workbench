@@ -15,13 +15,18 @@
   <!-- Release publishes with a RuntimeIdentifier (-r <rid>) produce a self-contained single file.
        Plain `dotnet build` / `dotnet run` are unaffected.
        Trimming and Native AOT are deliberately NOT enabled: the Azure SDK and the reflection-based
-       System.Text.Json usage are not trim-safe. ReadyToRun + compression keep startup and size down. -->
+       System.Text.Json usage are not trim-safe. ReadyToRun keeps startup fast.
+       Not compressed: decompressing the ~150 MB bundle on every launch roughly doubled startup time, and the
+       release archives are zipped anyway, so the download is the same size (~60 MB).
+       Native libraries (Skia, HarfBuzz, ANGLE) sit next to the executable rather than being extracted to a temp
+       folder at runtime: that avoids extraction and antivirus scanning of the extracted copies on first launch, and
+       lets macOS code signing sign each library in place. -->
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <PublishReadyToRun>true</PublishReadyToRun>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
   <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' And '$(Configuration)' == 'Release'">
     <DebugType>none</DebugType>
