@@ -133,7 +133,11 @@ git pull
 
 ### How the build is configured
 
-Any publish with a runtime identifier (`-r <rid>`) is self-contained, single-file, ReadyToRun-compiled and compressed, with no `.pdb`. These settings live in `src/AzureWorkbench/AzureWorkbench.csproj`. It is deliberately **not** Native AOT or trimmed: the Azure SDK and reflection-based `System.Text.Json` are not trim-safe, so ReadyToRun and compression keep start-up time and download size reasonable instead (about 60 MB per platform).
+Any publish with a runtime identifier (`-r <rid>`) is self-contained and ReadyToRun-compiled, with no `.pdb`. The .NET code is one executable, and the few native graphics libraries (Skia, HarfBuzz and, on Windows, ANGLE) sit beside it, so keep them together. These settings live in `src/AzureWorkbench/AzureWorkbench.csproj`.
+
+- **Not compressed:** decompressing the bundle on every launch roughly doubled start-up time (about 1.3 s versus 0.7 s to the first window in our measurements). The release archives are zipped anyway, so downloads stay about 60 MB.
+- **Native libraries are not extracted at runtime:** extracting them to a temp folder costs time, and on Windows antivirus scanning of the extracted copies slows the first launch of each version.
+- **Not Native AOT or trimmed:** the Azure SDK and reflection-based `System.Text.Json` are not trim-safe.
 
 ## Cutting a release
 

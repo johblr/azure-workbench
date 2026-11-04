@@ -43,8 +43,9 @@ Azure Workbench {v} (Windows, {rid})
 ====================================
 
 RUNNING
-Double-click AzureWorkbench.exe. It is a single self-contained file: you do NOT
-need to install .NET. You can keep it anywhere (for example C:\\Apps\\AzureWorkbench).
+Extract the whole zip to a folder (for example C:\\Apps\\AzureWorkbench) and
+double-click AzureWorkbench.exe. It is self-contained: you do NOT need to install
+.NET. Keep the .dll files in the same folder as AzureWorkbench.exe; it needs them.
 
 """ + COMMON_SIGNIN + """
 UNSIGNED BUILD WARNING
@@ -133,6 +134,9 @@ ICONS="${XDG_DATA_HOME:-$HOME/.local/share}/icons"
 mkdir -p "$OPT" "$BIN" "$APPS" "$ICONS"
 
 install -m 0755 "$SRC/AzureWorkbench" "$OPT/AzureWorkbench"
+for lib in "$SRC"/*.so; do
+  if [ -e "$lib" ]; then install -m 0755 "$lib" "$OPT/"; fi
+done
 install -m 0644 "$SRC/ThirdPartyNotices.txt" "$OPT/ThirdPartyNotices.txt"
 install -m 0644 "$SRC/AppIcon.png" "$ICONS/azure-workbench.png"
 echo "Installed program:    $OPT/AzureWorkbench"
@@ -194,6 +198,11 @@ def exe_path(pub, rid):
     return exe
 
 
+def native_libs(pub):
+    """Native libraries published next to the executable (Skia, HarfBuzz, ANGLE); they must ship beside it."""
+    return sorted(p for p in pub.iterdir() if p.is_file() and p.suffix.lower() in (".dll", ".so", ".dylib"))
+
+
 def notices_path(pub):
     p = pub / "ThirdPartyNotices.txt"
     return p if p.is_file() else NOTICES
@@ -202,6 +211,8 @@ def notices_path(pub):
 def package_windows(pub, rid, version, archive):
     with zipfile.ZipFile(archive, "w") as zf:
         zip_add(zf, "AzureWorkbench.exe", src=exe_path(pub, rid), mode=0o755)
+        for lib in native_libs(pub):
+            zip_add(zf, lib.name, src=lib)
         zip_add(zf, "ThirdPartyNotices.txt", src=notices_path(pub))
         zip_add(zf, "LICENSE.txt", src=LICENSE)
         zip_add(zf, "README-FIRST.txt", data=readme("win", version, rid).replace("\n", "\r\n"))
@@ -224,6 +235,8 @@ def package_linux(pub, rid, version, archive):
         d.type, d.mode, d.mtime = tarfile.DIRTYPE, 0o755, now
         tf.addfile(d)
         add_bytes(tf, "AzureWorkbench", exe_path(pub, rid).read_bytes(), 0o755)
+        for lib in native_libs(pub):
+            add_bytes(tf, lib.name, lib.read_bytes(), 0o755)
         add_bytes(tf, "ThirdPartyNotices.txt", notices_path(pub).read_bytes(), 0o644)
         add_bytes(tf, "LICENSE", LICENSE.read_bytes(), 0o644)
         add_bytes(tf, "AppIcon.png", (PKG / "AppIcon.png").read_bytes(), 0o644)
@@ -254,6 +267,8 @@ def package_macos(pub, rid, version, archive):
     with zipfile.ZipFile(archive, "w") as zf:
         zip_add(zf, f"{app}/Contents/Info.plist", data=plist)
         zip_add(zf, f"{app}/Contents/MacOS/AzureWorkbench", src=exe_path(pub, rid), mode=0o755)
+        for lib in native_libs(pub):
+            zip_add(zf, f"{app}/Contents/MacOS/{lib.name}", src=lib, mode=0o755)
         zip_add(zf, f"{app}/Contents/Resources/AppIcon.icns", src=PKG / "AppIcon.icns")
         zip_add(zf, "ThirdPartyNotices.txt", src=notices_path(pub))
         zip_add(zf, "LICENSE.txt", src=LICENSE)
