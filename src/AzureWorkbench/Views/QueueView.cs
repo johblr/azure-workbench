@@ -473,9 +473,10 @@ public sealed class QueueView : UserControl, IWorkspaceView
                 ? $"\n\nThis sends to topic {Queue.Name}; every subscription whose rules match receives the messages." : "";
             var cross = !string.Equals(target.Ref.Namespace.Host, Queue.Namespace.Host, StringComparison.OrdinalIgnoreCase)
                 ? $"\nThe target is on another namespace ({target.Ref.Namespace.Host})." : "";
-            var how = move
+            var how = (move
                 ? "Each message is sent to the target first, then removed from the dead-letter queue, so a failure can leave a duplicate but never loses a message."
-                : "Source messages in Azure are unchanged.";
+                : "Source messages in Azure are unchanged.")
+                + "\nIf the target uses duplicate detection, copies get new message IDs (the original is kept in the OriginalMessageId property) so Service Bus doesn't discard them.";
             Ui.Confirm(anchor,
                 $"{action} {selected.Count} message{(selected.Count == 1 ? "" : "s")}: {Describe(Queue)}{(move ? " (dead-letter)" : "")} → {target.Label}.{cross}\n{how}{note}",
                 action, () => RunLabelled(() => move ? Move(target.Ref) : Resend(target.Ref), move ? "Moving selected DLQ messages..." : "Resending selected messages..."));
@@ -486,10 +487,10 @@ public sealed class QueueView : UserControl, IWorkspaceView
     {
         target ??= Queue;
         var selected = Selected();
-        await _service.ResendAsync(target, selected.Select(m => m.Message));
+        var newIds = await _service.ResendAsync(target, selected.Select(m => m.Message));
         if (HasReceivedMessages) RemoveItems(selected);
         _ = RefreshCountsAsync();
-        return $"Resent {selected.Count} to {Describe(target)}. Source messages in Azure are unchanged.";
+        return $"Resent {selected.Count} to {Describe(target)}. Source messages in Azure are unchanged.{NewIdNote(newIds)}";
     }
 
     async Task<string> Move(QueueRef? target = null)
@@ -498,11 +499,15 @@ public sealed class QueueView : UserControl, IWorkspaceView
         if (!DlqActionsAvailable)
             throw new InvalidOperationException("Peek the dead-letter queue and select messages to move. For received-and-deleted messages, use Resend to.");
         var selected = Selected();
-        var moved = await _service.MoveFromDeadLetterAsync(Queue, selected.Select(m => m.Message.SequenceNumber).ToHashSet(), target);
+        var (moved, newIds) = await _service.MoveFromDeadLetterWithDetailsAsync(Queue, selected.Select(m => m.Message.SequenceNumber).ToHashSet(), target);
         RemoveItems(selected.Where(m => moved.Contains(m.Message.SequenceNumber)));
         _ = RefreshCountsAsync();
-        return $"Moved {moved.Count} to {Describe(target)}. {selected.Count - moved.Count} not found.";
+        return $"Moved {moved.Count} to {Describe(target)}. {selected.Count - moved.Count} not found.{NewIdNote(newIds)}";
     }
+
+    static string NewIdNote(bool newIds) => newIds
+        ? " The target uses duplicate detection, so the copies were given new message IDs (originals in the OriginalMessageId property)."
+        : "";
 
     void ConfirmComplete()
     {

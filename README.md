@@ -210,6 +210,7 @@ Select a queue, topic or subscription to open its tab. **Queues** and **subscrip
 
 - **Resend to...** sends copies of the selected messages to this entity or any other indexed queue or topic, including ones in other namespaces. Source messages are unchanged.
 - **Move to...** (dead-letter only) sends each selected message to the target and then removes it from the dead-letter queue. It sends before removing, so the worst case is a duplicate, never a loss.
+- **Duplicate detection:** if the target queue or topic has duplicate detection turned on, Service Bus would silently discard a copy that kept the original message ID. So **Move to...** and **Resend to...** give copies a new message ID and record the original in an `OriginalMessageId` property. Copies to targets without duplicate detection keep their ID. If the target's settings can't be read, the app assumes duplicate detection is on. **Import & send...** keeps original IDs on purpose, so re-importing the same file can't create duplicates.
 - **Edit as new...** copies one message's body, content type, subject and properties into the composer so you can fix it before sending. That creates a new message. Use **Complete selected** to remove the original dead-letter once you're happy.
 - **Complete selected** (dead-letter only) removes the selected dead-lettered messages without resending them, after confirmation.
 - **Purge DLQ...** removes every dead-lettered message, in batches, after you type the entity name. It shows progress and can be cancelled. It never touches active messages.

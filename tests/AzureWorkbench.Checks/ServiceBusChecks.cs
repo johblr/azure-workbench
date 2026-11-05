@@ -27,7 +27,74 @@ static class ServiceBusChecks
     {
         PureChecks();
         ViewChecks();
+        DuplicateDetectionChecks();
         Console.WriteLine($"Service Bus checks passed ({_checks}).");
+    }
+
+    /// <summary>Moving or resending to an entity with duplicate detection must not reuse the original message ID.</summary>
+    static void DuplicateDetectionChecks()
+    {
+        var original = Msg(7, "order-42", "{\"id\":42}", reason: "MaxDeliveryCountExceeded", props: new Dictionary<string, object> { ["tenant"] = "a" });
+        var same = QueueService.Copy(original, newMessageId: false);
+        Check(same.MessageId == "order-42" && !same.ApplicationProperties.ContainsKey(QueueService.OriginalMessageIdProperty),
+            "copies keep their message ID when the target has no duplicate detection");
+        var fresh = QueueService.Copy(original, newMessageId: true);
+        Check(fresh.MessageId != "order-42" && Guid.TryParse(fresh.MessageId, out _)
+            && (string)fresh.ApplicationProperties[QueueService.OriginalMessageIdProperty] == "order-42"
+            && (string)fresh.ApplicationProperties["tenant"] == "a" && fresh.Body.ToString() == "{\"id\":42}",
+            "copies for duplicate-detecting targets get a new ID and keep the original ID, body and properties");
+        var twice = Msg(8, "retry-2", props: new Dictionary<string, object> { [QueueService.OriginalMessageIdProperty] = "order-42" });
+        Check((string)QueueService.Copy(twice, newMessageId: true).ApplicationProperties[QueueService.OriginalMessageIdProperty] == "order-42",
+            "copying a copy keeps the first original message ID");
+
+        var credential = new TestCredential();
+        var arm = new ArmClient(credential, "33333333-3333-3333-3333-333333333333",
+            new ArmClientOptions { Transport = new HttpClientTransport(new HttpClient(new ArmHandler())) });
+        var ns = new NamespaceRef(credential, Pump(arm.GetServiceBusNamespaceResource(new ResourceIdentifier(
+            "/subscriptions/33333333-3333-3333-3333-333333333333/resourceGroups/rg/providers/Microsoft.ServiceBus/namespaces/sb-dedupe")).GetAsync()).Value);
+        var deduped = new QueueRef(ns, "deduped");
+        var plain = new QueueRef(ns, "plain");
+        var asked = new List<string>();
+        var service = new QueueService(target =>
+        {
+            asked.Add(target.SendTarget);
+            return Task.FromResult(target.SendTarget == "deduped");
+        });
+        var log = new List<string>();
+        var client = new FakeClient(ns.Host, log);
+        ((Dictionary<string, ServiceBusClient>)typeof(QueueService).GetField("_clients", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(service)!)[ns.Host] = client;
+
+        client.Dlq.Messages.AddRange([Msg(1, "a-1"), Msg(2, "a-2")]);
+        var (moved, newIds) = Pump(service.MoveFromDeadLetterWithDetailsAsync(plain, new HashSet<long> { 1, 2 }, deduped));
+        var sent = client.Sender("deduped").Sent;
+        Check(newIds && moved.SetEquals([1L, 2L]) && sent.Count == 2 && sent.All(m => m.MessageId is not ("a-1" or "a-2"))
+            && sent.Select(m => (string)m.ApplicationProperties[QueueService.OriginalMessageIdProperty]).SequenceEqual(["a-1", "a-2"]),
+            "moving to a duplicate-detecting queue sends copies with new IDs, so they can't be discarded");
+        Check(log.IndexOf($"send:{ns.Host}/deduped:{sent[0].MessageId}") < log.IndexOf("complete:1"),
+            "the copy is still sent before the dead-lettered original is completed");
+
+        client.Dlq.Messages.AddRange([Msg(3, "b-3")]);
+        var (_, plainIds) = Pump(service.MoveFromDeadLetterWithDetailsAsync(deduped, new HashSet<long> { 3 }, plain));
+        Check(!plainIds && client.Sender("plain").Sent.Single().MessageId == "b-3",
+            "moving to a queue without duplicate detection keeps the original ID");
+        Check(asked.SequenceEqual(["deduped", "plain"]), "duplicate detection is checked on the target, not the source");
+
+        Check(Pump(service.ResendAsync(deduped, [Msg(4, "c-4")])) && client.Sender("deduped").Sent.Last().MessageId != "c-4",
+            "resending to a duplicate-detecting queue also uses new IDs");
+        var topic = new QueueRef(ns, "deduped", "audit");
+        Pump(service.ResendAsync(topic, [Msg(5, "d-5")]));
+        Check(asked.Last() == "deduped", "for a subscription, duplicate detection is read from its topic");
+
+        // Unknown settings (e.g. no permission to read the entity) are treated as duplicate detection on: a new ID is always safe.
+        var deniedArm = new ArmClient(credential, "33333333-3333-3333-3333-333333333333",
+            new ArmClientOptions { Transport = new HttpClientTransport(new HttpClient(new DenyEntitiesHandler())), Retry = { MaxRetries = 0 } });
+        var deniedNs = new NamespaceRef(credential, Pump(deniedArm.GetServiceBusNamespaceResource(new ResourceIdentifier(
+            "/subscriptions/33333333-3333-3333-3333-333333333333/resourceGroups/rg/providers/Microsoft.ServiceBus/namespaces/sb-denied")).GetAsync()).Value);
+        var realLookup = new QueueService();
+        Check(Pump(realLookup.RequiresDuplicateDetectionAsync(new QueueRef(deniedNs, "orders"))),
+            "when the target's settings can't be read, copies get new IDs");
+        Check(!Pump(realLookup.RequiresDuplicateDetectionAsync(new QueueRef(ns, "orders"))),
+            "a queue whose ARM settings don't enable duplicate detection keeps IDs");
     }
 
     // ------------------------------------------------------------------ pure logic
@@ -181,6 +248,23 @@ static class ServiceBusChecks
         public IReadOnlyList<AppConfigView> OpenConfigurations => [];
         public void FindInLogs(string operationId, Control anchor) => Searched.Add(operationId);
         public void Notify(string message) { }
+    }
+
+    /// <summary>Serves the namespace but refuses entity lookups, like a user without read access to queue settings.</summary>
+    sealed class DenyEntitiesHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path.Contains("/queues/") || path.Contains("/topics/"))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden)
+                {
+                    Content = new StringContent("""{"error":{"code":"AuthorizationFailed","message":"denied"}}""", Encoding.UTF8, "application/json"),
+                });
+            var name = path.Split('/').Last();
+            var json = $$$"""{"id":"{{{path}}}","name":"{{{name}}}","type":"Microsoft.ServiceBus/namespaces","location":"westeurope","properties":{"serviceBusEndpoint":"https://{{{name}}}.servicebus.windows.net/"}}""";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") });
+        }
     }
 
     sealed class ArmHandler : HttpMessageHandler

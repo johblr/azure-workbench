@@ -9,6 +9,14 @@ public sealed class QueueService : IAsyncDisposable
 {
     // Cache lookup runs on the UI thread before awaiting; SDK clients support concurrent tab operations.
     readonly Dictionary<string, ServiceBusClient> _clients = new();
+    readonly Func<QueueRef, Task<bool>> _duplicateDetection;
+
+    /// <summary>Name of the application property that records a copy's original message ID.</summary>
+    public const string OriginalMessageIdProperty = "OriginalMessageId";
+
+    /// <param name="duplicateDetection">Override for <see cref="RequiresDuplicateDetectionAsync"/> (checks use it); defaults to reading the entity from ARM.</param>
+    public QueueService(Func<QueueRef, Task<bool>>? duplicateDetection = null) =>
+        _duplicateDetection = duplicateDetection ?? ReadDuplicateDetectionAsync;
 
     ServiceBusClient Client(QueueRef q)
     {
@@ -76,9 +84,51 @@ public sealed class QueueService : IAsyncDisposable
         return got;
     }
 
-    /// <summary>Sends copies of the messages to <paramref name="target"/> (its send target; on its own namespace connection).</summary>
-    public Task ResendAsync(QueueRef target, IEnumerable<ServiceBusReceivedMessage> messages) =>
-        SendManyAsync(target, messages.Select(m => new ServiceBusMessage(m)));
+    /// <summary>
+    /// Sends copies of the messages to <paramref name="target"/> (its send target; on its own namespace connection).
+    /// Returns true when the copies were given new message IDs because the target uses duplicate detection.
+    /// </summary>
+    public async Task<bool> ResendAsync(QueueRef target, IEnumerable<ServiceBusReceivedMessage> messages)
+    {
+        var newIds = await RequiresDuplicateDetectionAsync(target);
+        await SendManyAsync(target, messages.Select(m => Copy(m, newIds)));
+        return newIds;
+    }
+
+    /// <summary>
+    /// Whether the entity that receives sends for <paramref name="target"/> (the queue, or the topic for topics and subscriptions)
+    /// discards messages whose ID it has already seen. Errs on the side of true when it can't be read, because a copy that
+    /// keeps its ID can then be silently dropped.
+    /// </summary>
+    public Task<bool> RequiresDuplicateDetectionAsync(QueueRef target) => _duplicateDetection(target);
+
+    static async Task<bool> ReadDuplicateDetectionAsync(QueueRef target)
+    {
+        try
+        {
+            return target.Kind == EntityKind.Queue
+                ? (await target.Namespace.Resource.GetServiceBusQueueAsync(target.SendTarget)).Value.Data.RequiresDuplicateDetection == true
+                : (await target.Namespace.Resource.GetServiceBusTopicAsync(target.SendTarget)).Value.Data.RequiresDuplicateDetection == true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Copies a received message for resending. With <paramref name="newMessageId"/>, the copy gets a fresh ID and records the
+    /// original in <see cref="OriginalMessageIdProperty"/> (the first original is kept if it was already copied before), so
+    /// duplicate detection on the target can't discard it.
+    /// </summary>
+    public static ServiceBusMessage Copy(ServiceBusReceivedMessage message, bool newMessageId)
+    {
+        var copy = new ServiceBusMessage(message);
+        if (!newMessageId) return copy;
+        if (!string.IsNullOrEmpty(message.MessageId)) copy.ApplicationProperties.TryAdd(OriginalMessageIdProperty, message.MessageId);
+        copy.MessageId = Guid.NewGuid().ToString();
+        return copy;
+    }
 
     /// <summary>Sends new messages in batches of up to 100.</summary>
     public async Task SendManyAsync(QueueRef target, IEnumerable<ServiceBusMessage> messages)
@@ -105,11 +155,23 @@ public sealed class QueueService : IAsyncDisposable
     /// Moves the given DLQ messages (by sequence number) to <paramref name="target"/> (default: the entity's own send target).
     /// The target may be on another namespace. Returns the sequence numbers moved.
     /// </summary>
-    public async Task<HashSet<long>> MoveFromDeadLetterAsync(QueueRef q, IReadOnlySet<long> sequenceNumbers, QueueRef? target = null)
+    public async Task<HashSet<long>> MoveFromDeadLetterAsync(QueueRef q, IReadOnlySet<long> sequenceNumbers, QueueRef? target = null) =>
+        (await MoveFromDeadLetterWithDetailsAsync(q, sequenceNumbers, target)).Moved;
+
+    /// <summary>
+    /// Like <see cref="MoveFromDeadLetterAsync"/>, also reporting whether copies got new message IDs. When the target uses duplicate
+    /// detection, a copy that kept its ID would be accepted and then silently discarded as a duplicate of the original send, and the
+    /// original would still be completed: the message would be lost. New IDs make the copy a distinct message.
+    /// </summary>
+    public async Task<(HashSet<long> Moved, bool NewMessageIds)> MoveFromDeadLetterWithDetailsAsync(QueueRef q, IReadOnlySet<long> sequenceNumbers,
+        QueueRef? target = null)
     {
-        await using var sender = Client(target ?? q).CreateSender((target ?? q).SendTarget);
+        target ??= q;
+        var newIds = await RequiresDuplicateDetectionAsync(target);
+        await using var sender = Client(target).CreateSender(target.SendTarget);
         // send before complete: worst case a duplicate, never a loss
-        return await ProcessDeadLetterAsync(q, sequenceNumbers, m => sender.SendMessageAsync(new ServiceBusMessage(m)));
+        var moved = await ProcessDeadLetterAsync(q, sequenceNumbers, m => sender.SendMessageAsync(Copy(m, newIds)));
+        return (moved, newIds);
     }
 
     /// <summary>Removes the given DLQ messages (by sequence number) without resending them. Returns the sequence numbers removed.</summary>
