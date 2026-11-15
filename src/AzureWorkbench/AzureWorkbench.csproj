@@ -39,10 +39,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.3.22" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.22" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <PackageReference Include="Avalonia" Version="11.3.23" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.23" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.23" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.23" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
     <PackageReference Include="Azure.ResourceManager.Authorization" Version="1.1.7" />
