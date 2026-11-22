@@ -7,6 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/AzureWorkbench/AzureWorkbench.csproj" />
-    <PackageReference Include="Avalonia.Headless" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Headless" Version="11.3.23" />
   </ItemGroup>
 </Project>
